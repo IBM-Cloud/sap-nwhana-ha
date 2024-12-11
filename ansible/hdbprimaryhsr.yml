@@ -1,0 +1,13 @@
+---
+- hosts: hdb_iphost1
+  gather_facts: true
+  pre_tasks:
+    - name: Import playbook variables
+      include_vars: "{{ item }}"
+      loop:
+        - "saphana-vars.yml"
+        - "hainfra-vars.yml"
+  roles:
+    - saphanabkp
+    - saphsrprimary
+...

@@ -1,0 +1,14 @@
+---
+- hosts: app_iphost1
+  gather_facts: true
+  pre_tasks:
+    - name: Import playbook variables
+      include_vars: "{{ item }}"
+      loop:
+        - "nwabapapp-vars.yml"
+        - "saphana-vars.yml"
+        - "hainfra-vars.yml"
+        - "dns-vars.yml"
+  roles:
+    - dbinstance
+...

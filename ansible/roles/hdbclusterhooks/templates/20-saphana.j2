@@ -1,0 +1,6 @@
+Cmnd_Alias SITE_A_SOK   = /usr/sbin/crm_attribute -n hana_{{ hana_sid | lower }}_site_srHook_SITE_A -v SOK -t crm_config -s SAPHanaSR
+Cmnd_Alias SITE_A_SFAIL = /usr/sbin/crm_attribute -n hana_{{ hana_sid | lower }}_site_srHook_SITE_A -v SFAIL -t crm_config -s SAPHanaSR
+Cmnd_Alias SITE_B_SOK   = /usr/sbin/crm_attribute -n hana_{{ hana_sid | lower }}_site_srHook_SITE_B -v SOK -t crm_config -s SAPHanaSR
+Cmnd_Alias SITE_B_SFAIL = /usr/sbin/crm_attribute -n hana_{{ hana_sid | lower }}_site_srHook_SITE_B -v SFAIL -t crm_config -s SAPHanaSR
+{{ hana_sid | lower }}adm ALL=(ALL) NOPASSWD: SITE_A_SOK, SITE_A_SFAIL, SITE_B_SOK, SITE_B_SFAIL
+Defaults!SITE_A_SOK, SITE_A_SFAIL, SITE_B_SOK, SITE_B_SFAIL !requiretty

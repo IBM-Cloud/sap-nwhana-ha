@@ -1,0 +1,6 @@
+---
+- name: Install required packages
+  package:
+    state: present
+    name: "{{ saphana_required_packages }}"
+...

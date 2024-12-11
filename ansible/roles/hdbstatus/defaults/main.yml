@@ -1,0 +1,7 @@
+---
+hana_db_env: "source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh"
+hana_db_status_command: "python /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/python_support/systemOverview.py"
+hana_db_status_ok: "|Services|AllStarted|OK|Yes|"
+task_retries: 30
+task_delay: 30
+...

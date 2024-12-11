@@ -1,0 +1,171 @@
+---
+- name: Set default JSON file
+  set_fact:
+    sapapp_vol_setup_json: "sapapp_vm_volume_layout.json"
+
+- name: Check if the JSON file for SAP APP VSI storage configuration is available on Ansible controller
+  stat:
+    path: "{{ playbook_dir }}/{{ sapapp_vol_setup_json }}"
+  register: json_sapapp_storage_file_status
+  delegate_to: localhost
+
+- name: Fail if the JSON file is missing
+  fail:
+    msg: "The file {{ playbook_dir }}/{{ sapapp_vol_setup_json }} is missing."
+  when: not json_sapapp_storage_file_status.stat.exists
+
+- name: Get the JSON file content
+  shell: "cat {{ playbook_dir }}/{{ sapapp_vol_setup_json }}"
+  register: sapapp_result
+  changed_when: false
+  when: json_sapapp_storage_file_status.stat.exists
+  delegate_to: localhost
+
+- name: Replace the holders in the output with the appropriate values
+  set_fact:
+    sapapp_result: "{{ (sapapp_result | regex_replace(replace_item.old_val, replace_item.new_val)) }}"
+  loop:
+    - { old_val: '<swap_disk_size>', new_val: "{{ swap_disk_size }}" }
+  loop_control:
+    loop_var: replace_item
+
+- name: Save the JSON data to a variable as a fact
+  set_fact:
+    sapapp_jsondata: "{{ sapapp_result.stdout | from_json }}"
+
+- name: Set the SAP APP profile
+  set_fact:
+    sapapp_profile: "default"
+
+- name: Detect the appropriate disks to be configured
+  set_fact:
+    sapapp_final_storage: "{{ [sapapp_jsondata, ansible_devices, sapapp_profile] | list | storagedetails }}"
+
+- name: Get the missing disks
+  fail:
+    msg: "{{ sapapp_final_storage }}"
+  when: sapapp_final_storage is not mapping
+
+- name: Display final_storage
+  debug:
+    var: sapapp_final_storage
+
+- name: Create the volume groups
+  lvg:
+    vg: "{{ sap_sid | lower }}_{{ sapapp_stg_details.value.lvm.vg.vg_name }}"
+    pvs: "{{ sapapp_stg_details.value.device | join(',') }}"
+  loop: "{{ sapapp_final_storage | dict2items }}"
+  loop_control:
+    loop_var: sapapp_stg_details
+  when: '"lvm" in sapapp_stg_details.value.keys()'
+
+- name: Create the logical volumes
+  lvol:
+    vg: "{{ sap_sid|lower }}_{{ sapapp_lvm_data[0]['vg_name'] }}"
+    lv: "{{ sap_sid|lower }}_{{ sapapp_lvm_data[0]['lv_name'] }}"
+    size: "{{ sapapp_lvm_data[0]['lv_size'] }}"
+    opts: "{{ sapapp_lvm_data[0]['lv_options'] }}"
+    shrink: false
+  loop: "{{ sapapp_final_storage | lvmdata }}"
+  loop_control:
+    loop_var: sapapp_lvm_data
+
+- name: Create the partitions
+  parted:
+    device: "{{ sapapp_part[0] }}"
+    number: 1
+    label: gpt
+    state: present
+  loop: "{{ sapapp_final_storage | partitionlist }}"
+  loop_control:
+    loop_var: sapapp_part
+
+- name: Create the filesystems
+  filesystem:
+    fstype: "{{ sapapp_fs_data[0]['fs_type'] }}"
+    dev: "{{ sapapp_fs_data[0]['fs_device'] }}"
+    opts: "{{ sapapp_fs_data[0]['fs_options'] }}"
+  loop: "{{ [sapapp_final_storage, sap_sid | lower] | filesystemdata }}"
+  loop_control:
+    loop_var: sapapp_fs_data
+
+- name: Check if the filesystems should be mounted in a specific order
+  set_fact:
+    mounpoints: mp_d[0]['mp']
+  loop: "{{ [sapapp_final_storage, sap_sid | lower] | filesystemdata }}"
+  loop_control:
+    loop_var: sapapp_mp_d
+  when: sapapp_mp_d[0]['mp'] != None
+
+- name: Mount the filesystems
+  mount:
+    path: "{{ sapapp_mp_data[0]['mp'] }}"
+    src: "{{ sapapp_mp_data[0]['mount_source'] }}"
+    fstype: "{{ sapapp_mp_data[0]['fs_type'] }}"
+    opts: "{{ sapapp_mp_data[0]['mount_opt'] }}"
+    state: mounted
+  loop: "{{ [sapapp_final_storage, sap_sid | lower] | filesystemdata }}"
+  loop_control:
+    loop_var: sapapp_mp_data
+  when: sapapp_mp_data[0]['mp'] != None
+
+- name: Create SWAP on VSI
+  ansible.builtin.include_tasks:
+    file: swap_vm.yml
+
+- name: Check if "/sapmnt/<SID>" directory exists
+  stat:
+    path: "/sapmnt/{{ sap_sid | upper }}"
+  register: sapmnt_dir
+
+- name: Create the directories for NFS mount
+  file:
+    path: "{{ nfs_dir.path }}"
+    state: directory
+    mode: "{{ nfs_dir.permissions }}"
+  loop: "{{ nfs_directories | list }}"
+  loop_control:
+    loop_var: nfs_dir
+  when: not sapmnt_dir.stat.exists
+
+- name: Mount nfs files
+  mount:
+    path: "{{ mount_item.mount_point }}"
+    src: "{{ mount_item.mount_source }}"
+    fstype: "{{ mount_item.fs_type }}"
+    opts: "{{ mount_item.mount_options }}"
+    state: mounted
+  loop: "{{ nfs_mounts | list }}"
+  loop_control:
+    loop_var: mount_item
+
+- name: Configure Domain in /etc/idmapd.conf
+  replace:
+    path: /etc/idmapd.conf
+    regexp: '(.*#Domain = local\.domain\.edu.*)'
+    replace: 'Domain = slnfsv4.com'
+
+- name: Configure Nobody-User in /etc/idmapd.conf
+  replace:
+    path: /etc/idmapd.conf
+    regexp: '^#(.*Nobody-User = nobody.*)'
+    replace: '\1'
+
+- name: Configure Nobody-Group in /etc/idmapd.conf
+  replace:
+    path: /etc/idmapd.conf
+    regexp: '^#(.*Nobody-Group = nobody.*)'
+    replace: '\1'
+
+- name: Display the dialogue instance directory
+  shell: |
+    ls /usr/sap/{{ sap_sid | upper }}/D*
+  register: di_dir_status
+  changed_when: False
+  when: sap_sid is defined
+  ignore_errors: true
+
+- name: Run nfsidmap
+  command: nfsidmap -c
+  when: di_dir_status.rc != 0
+...

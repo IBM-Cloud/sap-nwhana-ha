@@ -1,0 +1,6 @@
+---
+- name: Install required packages
+  package:
+    state: present
+    name: "{{ sapbase_required_packages }}"
+...

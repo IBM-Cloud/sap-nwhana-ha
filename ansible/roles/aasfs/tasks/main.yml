@@ -1,0 +1,27 @@
+---
+- name: Create directory for NFS mount
+  file:
+    path: "/usr/sap/{{ sap_sid | upper }}/D{{ sap_aas_instance_number }}"
+    state: directory
+    mode: '0775'
+
+- name: Mount nfs file
+  mount:
+    path: "/usr/sap/{{ sap_sid | upper }}/D{{ sap_aas_instance_number }}"
+    src: "{{ as2_mount_path }}"
+    fstype: nfs
+    opts: "rw,hard,rsize=65536,wsize=65536,vers=4.1,sec=sys"
+    state: mounted
+
+- name: Check SAP NW ERS installation status
+  stat:
+    path: "/usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}/exe/sapstartsrv"
+  register: ers_stat_result
+
+- name: Reboot target host
+  reboot:
+    connect_timeout: 5
+    post_reboot_delay: 10
+  changed_when: False
+  when: not ers_stat_result.stat.exists
+...

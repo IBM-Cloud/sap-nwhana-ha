@@ -1,0 +1,11 @@
+---
+cluster_required_packages:
+  - pcs
+  - pacemaker
+  - fence-agents-all
+  - fence-agents-ibm-vpc
+  - resource-agents
+  - resource-agents-sap
+  - resource-agents-sap-hana
+  - nmap-ncat
+...

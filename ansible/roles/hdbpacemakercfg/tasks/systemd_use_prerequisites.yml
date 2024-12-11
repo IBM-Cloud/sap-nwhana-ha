@@ -1,0 +1,58 @@
+---
+- name: Check if HANA DB is installed
+  stat:
+    path: "/hana/shared/{{ hana_sid|upper }}/exe/linuxx86_64/hdb"
+  register: hdb_install_status
+
+- name:  Check if systemd usage is allowed for this OS major version
+  set_fact:
+    os_vers_ok: true
+  when: hdb_install_status.stat.exists and (ansible_distribution_major_version | int >= os_release_min | int)
+
+- name: Run the command to get systemd version
+  shell: |
+    set -o pipefail
+    systemctl --version | grep systemd
+  register: systemd_info
+  changed_when: False
+  when: hdb_install_status.stat.exists and os_vers_ok is defined
+
+- name: Extract systemd version
+  set_fact:
+    systemd_vers: "{{ systemd_info.stdout.split(' ')[1] | int }}"
+  when: systemd_info is defined
+
+- name:  Check if systemd usage is allowed for this systemd version
+  set_fact:
+    systemd_vers_ok: true
+  when: >-
+    systemd_vers is defined and (systemd_vers | int >= systemd_vers_min)
+
+- name: Run the command to get SAP HANA SP
+  shell:  |
+    set -o pipefail
+    source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+    HDB version | grep 'version:'
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hdb_versinfo
+  changed_when: False
+  when: systemd_vers_ok is defined
+
+- name: Extract HANA SP
+  set_fact:
+    hana_sp: "{{ ((hdb_versinfo.stdout.split('.')[2])[:2]) | int }}"
+  when: hdb_versinfo is defined
+
+- name: Check if systemd usage is allowed for this SAP HANA SP
+  set_fact:
+    hana_vers_ok: true
+  when: hana_sp is defined and (hana_sp | int >= hana_sp_min | int)
+
+- name: Set variable for systemd usage
+  set_fact:
+    use_systemd: true
+  when: hana_vers_ok is defined
+...

@@ -1,0 +1,89 @@
+---
+- name: Check if HANA DB was already installed
+  stat:
+    path: "/hana/shared/{{ hana_sid | upper }}/exe/linuxx86_64/hdb"
+  register: hdb_install_status
+
+- name: Import install kit
+  include_tasks: "install_kit.yml"
+  when: not hdb_install_status.stat.exists
+
+- name: Generate parameter file for hdblcm
+  template:
+    src: hanaconfig.cfg
+    dest: "{{ hana_kit }}/hanaconfig.cfg"
+  when: not hdb_install_status.stat.exists
+
+- name: Start SAP HANA DB installation
+  shell: "{{ hana_kit }}/DATA_UNITS/HDB_SERVER_LINUX_X86_64/hdblcm --configfile={{ hana_kit }}/hanaconfig.cfg -b"
+  when: not hdb_install_status.stat.exists
+
+- name: Check if SAP HANA Tenant exists
+  shell: |
+    set -o pipefail
+    su - {{ hana_sid | lower }}adm -c "hdbnsutil -printsysteminformation | grep -v SYSTEMDB"
+  register: sysinfo_cmd
+  changed_when: false
+  ignore_errors: true
+  when: hana_sid is defined
+
+- name: Check for HANA Instance status
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getinstancestatus_output
+  changed_when: false
+  when: hana_tenant | upper not in sysinfo_cmd.stdout
+
+- name: Set variable hanastarted
+  set_fact:
+    hanastarted: yes
+  when: '(hana_tenant | upper not in sysinfo_cmd.stdout) and "GRAY" not in getinstancestatus_output.stdout'
+
+- name: Start HANADB
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function StartSystem HDB
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  when: (hana_tenant | upper not in sysinfo_cmd.stdout) and hanastarted is not defined
+
+- name: Wait until HANA Instance is started
+  shell: |
+    /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getnewinstance_output
+  until: '"GRAY" not in getnewinstance_output.stdout and "YELLOW" not in getnewinstance_output.stdout'
+  retries: 200
+  delay: 10
+  when: (hana_tenant | upper not in sysinfo_cmd.stdout) and hanastarted is not defined
+  changed_when: False
+
+- name: Create SAP HANA Tenant if it doesn't exist
+  shell: |
+      set -o pipefail
+      export hanapwd="$(echo {{ hana_main_password }} | base64 -d)"
+      source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+      /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/hdbsql \
+      -i {{ hana_sysno }} -u SYSTEM -p "$(echo {{ hana_main_password }} | base64 -d)" -d SYSTEMDB -m <<EOF
+      CREATE DATABASE {{ hana_tenant | upper }} SYSTEM USER PASSWORD "$hanapwd";
+      EOF
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  no_log: true
+  when: hana_tenant | upper not in sysinfo_cmd.stdout
+
+- name: Cleanup
+  file:
+    path: "{{ hana_kit }}"
+    state: absent
+...

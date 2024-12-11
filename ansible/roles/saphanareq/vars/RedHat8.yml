@@ -1,0 +1,40 @@
+---
+saphana_required_packages:
+  - cairo
+  - graphviz
+  - iptraf-ng
+  - lm_sensors
+  - net-tools
+  - expect
+  - gtk2
+  - krb5-workstation
+  - krb5-libs
+  - libaio
+  - libatomic
+  - libcanberra-gtk2
+  - libibverbs
+  - libicu
+  - libssh2
+  - libtool-ltdl
+  - numactl
+  - openssl
+  - PackageKit-gtk3-module
+  - rsyslog
+  - sudo
+  - xfsprogs
+  - xorg-x11-xauth
+  - compat-sap-c++-9
+  - compat-sap-c++-10
+  - compat-sap-c++-11
+
+saphana_required_configurations:
+  - "reqpkg"
+  - "kernel_RedHat8"
+  - "c_states"
+  - "tsx"
+  - "filesystems"
+  - "tmpfs"
+  - "tuned"
+  - "limits"
+  - "reboot"
+... 

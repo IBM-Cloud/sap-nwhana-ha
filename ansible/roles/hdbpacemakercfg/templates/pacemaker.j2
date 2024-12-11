@@ -1,0 +1,4 @@
+[Unit]
+Description=Pacemaker needs the SAP HANA instance service
+Wants=SAP{{ hana_sid | upper }}_{{ hana_sysno }}.service
+After=SAP{{ hana_sid | upper }}_{{ hana_sysno }}.service

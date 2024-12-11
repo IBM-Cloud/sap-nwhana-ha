@@ -1,0 +1,7 @@
+---
+hana_db_env: "source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh"
+hana_replication_status_command: "python /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/python_support/systemReplicationStatus.py"
+hana_replication_status_ok: "overall system replication status: ACTIVE"
+task_retries: 30
+task_delay: 30
+...

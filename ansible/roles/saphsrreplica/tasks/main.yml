@@ -1,0 +1,147 @@
+---
+- name: Check SAP HANA replication status on secondary node
+  shell: |
+    source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+    hdbnsutil -sr_state --sapcontrol=1
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: repl_status_secondary
+  changed_when: False
+  ignore_errors: true
+  when: hana_sid is defined
+
+- name: Set SAP HANA replication status variable for secondary node
+  set_fact:
+    replication_secondary: "yes"
+  when: repl_status_secondary.stdout.find('mode=sync') != -1
+
+- name: Check the status of "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT_old" file
+  stat:
+    path: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT_old"
+  register: dat_old_status
+
+- name: Check the status of "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY_old" file
+  stat:
+    path: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY_old"
+  register: key_old_status
+
+- name: Rename PKI DAT file
+  command: "mv /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT_old"
+  when: not dat_old_status.stat.exists
+
+- name: Rename PKI KEY file
+  command: "mv /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY_old"
+  when: not key_old_status.stat.exists
+
+- name: Create a new empty PKI DAT file
+  ansible.builtin.file:
+    path: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT"
+    owner: "{{ hana_sid | lower }}adm"
+    group: sapsys
+    mode: '0644'
+    state: touch
+  when: not dat_old_status.stat.exists
+
+- name: Create a new empty PKI KEY file
+  ansible.builtin.file:
+    path: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY"
+    owner: "{{ hana_sid | lower }}adm"
+    group: sapsys
+    mode: '0640'
+    state: touch
+  when: not key_old_status.stat.exists
+
+- name: Replace the content of SSFS_{{ hana_sid | upper }}.DAT from secondary SAP HANA system withe the content of SSFS_{{ hana_sid | upper }}.DAT from primary SAP HANA system
+  ansible.builtin.copy:
+    content: "{{ hostvars['hdb_iphost1']['ssfs_data']['content'] | b64decode }}"
+    dest: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT"
+
+- name: Replace the content of SSFS_{{ hana_sid | upper }}.KEY from secondary SAP HANA system withe the content of SSFS_{{ hana_sid | upper }}.KEY from primary SAP HANA system
+  ansible.builtin.copy:
+    content: "{{ hostvars['hdb_iphost1']['ssfs_key']['content'] | b64decode }}"
+    dest: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY"
+
+- name: Check for HANA Instance status
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getinstancestatus_output
+  changed_when: False
+  when: replication_secondary is not defined and hana_sid is defined and hana_sysno is defined
+
+- name: Set variable hanastarted
+  set_fact:
+    hanastarted: yes
+  when: 'replication_secondary is not defined and "GRAY" not in getinstancestatus_output.stdout'
+
+- name: Stop HANA Instance on Secondary node
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function StopSystem HDB
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  when: replication_secondary is not defined and hanastarted is defined
+
+- name: Wait until HANA Instance is stopped
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getinstance_output
+  until: '"GREEN" not in getinstance_output.stdout and "YELLOW" not in getinstance_output.stdout'
+  retries: 200
+  delay: 10
+  when: replication_secondary is not defined and hanastarted is defined
+
+- name: Wait for the existing connections
+  shell: netstat -atn
+  register: connection_result
+  until: connection_result.stdout.find("127.0.0.1") == -1 and (hdb_iphost1 not in connection_result.stdout)
+  retries: 100
+  delay: 10
+  when: replication_secondary is not defined
+
+- name: Enable HSR on standby node
+  shell: |
+    source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+    /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/hdbnsutil \
+    -sr_register --name=SITE_B --remoteHost={{ hdb_hostname1 }} --remoteInstance={{ hana_sysno }} \
+    --replicationMode={{ replication_mode }} --operationMode={{ operation_mode }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hsrconfig
+  when: replication_secondary is not defined
+
+- name: Start HANADB on standby node
+  shell: |
+      /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/HDB start
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  when: replication_secondary is not defined
+
+- name: Wait until HANA Instance is started
+  shell: |
+    /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getinstance_output
+  until: '"GRAY" not in getinstance_output.stdout and "YELLOW" not in getinstance_output.stdout'
+  retries: 200
+  delay: 10
+  when: replication_secondary is not defined
+  changed_when: False
+...

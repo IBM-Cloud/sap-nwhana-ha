@@ -1,0 +1,66 @@
+---
+- name: Display the cluster configuration status
+  shell: |
+    pcs cluster config
+  register: appcluster_cfg
+  changed_when: False
+  ignore_errors: true
+  when: app_hostname1 is defined
+
+- name: Configure cluster authentication
+  shell: |
+    set -o pipefail
+    pcs host auth {{ app_hostname1 }} {{ app_hostname2 }} -u hacluster -p "$(echo {{ ha_password }} | base64 -d)"
+  no_log: true
+  when: app_hostname1 not in appcluster_cfg.stdout
+
+- name: Cluster setup
+  shell: |
+    pcs cluster setup ha-sap {{ app_hostname1 }} {{ app_hostname2 }} totem token=30000
+  when: '"30000" not in appcluster_cfg.stdout'
+
+- name: Display cluster status
+  shell: |
+    pcs status
+  register: pcsstatus
+  changed_when: False
+  when: app_hostname1 is defined
+  ignore_errors: true
+
+- name: Cluster startup
+  shell: |
+    pcs cluster start --all
+  when: '"Online:" not in pcsstatus.stdout'
+
+- name: Display the resource defaults
+  shell: |
+    pcs resource defaults config
+  register: default_resource
+  changed_when: False
+  when: app_hostname1 is defined
+
+- name: Set resource-stickiness for resource defaults
+  shell: |
+    pcs resource defaults update resource-stickiness=1
+  when: '"resource-stickiness=1" not in default_resource.stdout'
+
+- name: Set migration-threshold for resource defaults
+  shell: |
+    pcs resource defaults update migration-threshold=3
+  when: '"migration-threshold=3" not in default_resource.stdout'
+
+- name: Display the cluster status to check the fencing agent
+  shell: |
+    pcs status
+  register: pcs_status
+  changed_when: False
+  when: app_hostname1 is defined
+
+- name: Configure fencing agent
+  shell: |
+    pcs stonith create ha-sap-fa fence_ibm_vpc apikey={{ api_key }} \
+    limit=1 region={{ region }} pcmk_reboot_action=off \ 
+    pcmk_host_map='{{ app_hostname1 }}:{{ app_instanceid1 }};{{ app_hostname2 }}:{{ app_instanceid2 }}' \
+    verbose=1 op monitor interval=900s
+  when: '"ha-sap-fa" not in pcs_status.stdout'
+...

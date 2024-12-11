@@ -1,0 +1,66 @@
+---
+- name: Display the constraints
+  shell: |
+    pcs constraint config
+  register: hana_constraint
+  when: hana_sid is defined
+  ignore_errors: true
+  changed_when: False
+
+- name: Display SAP HANA cluster topology {{ hana_topology_name }}_{{ hana_sid | upper }}_{{ hana_sysno }}
+  shell: |
+    pcs resource config {{ hana_topology_name }}_{{ hana_sid | upper }}_{{ hana_sysno }}
+  register: hana_topology
+  when: hana_topology_name is defined
+  ignore_errors: true
+  changed_when: False
+
+- name: Display SAP HANA cluster resource SAPHana_{{ hana_sid | upper }}_{{ hana_sysno }}
+  shell: |
+    pcs resource config SAPHana_{{ hana_sid | upper }}_{{ hana_sysno }}
+  register: hana_resource
+  when: hana_sid is defined
+  ignore_errors: true
+  changed_when: False
+
+- name: Enable cluster maintenance mode
+  shell: |
+    pcs property set maintenance-mode=true
+  when: '"start" not in hana_constraint.stdout'
+
+- name: Set a variable for SAP HANA cluster topology
+  set_fact:
+    hana_topology_resource: "{{ hana_topology_name }}_{{ hana_sid | upper }}_{{ hana_sysno }}"
+
+- name: Create SAP HANA cluster topology
+  shell: |
+    pcs resource create {{ hana_topology_name }}_{{ hana_sid | upper }}_{{ hana_sysno }} {{ hana_topology_name }} SID={{ hana_sid | upper }} InstanceNumber={{ hana_sysno }} \
+    op start timeout=600 op stop timeout=300 op monitor interval=10 timeout=600 \
+    clone clone-max=2 clone-node-max=1 interleave=true
+  when: hana_topology_resource not in hana_topology.stdout
+
+- name: Set a variable for SAP HANA cluster resource
+  set_fact:
+    hana_cluster_resource: "SAPHana_{{ hana_sid | upper }}_{{ hana_sysno }}"
+
+- name: Create HANA cluster resource
+  shell: |
+    pcs resource create SAPHana_{{ hana_sid | upper }}_{{ hana_sysno }} SAPHana SID={{ hana_sid | upper }} InstanceNumber={{ hana_sysno }} \
+    PREFER_SITE_TAKEOVER=true DUPLICATE_PRIMARY_TIMEOUT=7200 AUTOMATED_REGISTER=true \
+    op start timeout=3600 op stop timeout=3600 \
+    op monitor interval=61 role="Slave" timeout=700 \
+    op monitor interval=59 role="Master" timeout=700 \
+    op promote timeout=3600 op demote timeout=3600 \
+    promotable notify=true clone-max=2 clone-node-max=1 interleave=true
+  when: hana_cluster_resource not in hana_resource.stdout
+
+- name: Configure cluster constraints
+  shell: |
+    pcs constraint order {{ hana_topology_name }}_{{ hana_sid | upper }}_{{ hana_sysno }}-clone then SAPHana_{{ hana_sid | upper }}_{{ hana_sysno }}-clone symmetrical=false
+  when: '"start" not in hana_constraint.stdout'
+
+- name: Disable cluster maintenance mode
+  shell: |
+    pcs property set maintenance-mode=false
+  when: '"start" not in hana_constraint.stdout'
+...

@@ -1,0 +1,14 @@
+---
+ap_required_packages:
+  - "libatomic"
+  - "compat-sap-c++-10"
+  - "compat-sap-c++-11"
+
+ap_required_configurations:
+  - "reqpkg"
+  - "kernel_RedHat8"
+  - "tmpfs"
+  - "limits"
+  - "compatlibs"
+  - "reboot"
+...

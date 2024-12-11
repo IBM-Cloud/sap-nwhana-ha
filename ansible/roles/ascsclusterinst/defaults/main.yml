@@ -1,0 +1,32 @@
+---
+# Sapinst product-id
+sap_product_id: "NW_ABAP_ASCS:NW750.HDB.ABAPHA"
+sapusers_product_id: "NW_Users"
+
+# Target files location
+sap_kit: "/usr/sap/kit"
+
+sapinst_dirs:
+  - "{{ sap_kit }}"
+  - "{{ sap_kit }}/swpm"
+
+sap_kits:
+  - sap_kit_src: "{{ kit_sapcar_file }}"
+    sap_kit_dest: "{{ sap_kit }}/sapcar"
+  - sap_kit_src: "{{ kit_swpm_file }}"
+    sap_kit_dest: "{{ sap_kit }}/swpm.sar"
+  - sap_kit_src: "{{ kit_sapexe_file }}"
+    sap_kit_dest: "{{ sap_kit }}/sapexe.sar"
+  - sap_kit_src: "{{ kit_sapexedb_file }}"
+    sap_kit_dest: "{{ sap_kit }}/sapexedb.sar"
+  - sap_kit_src: "{{ kit_igsexe_file }}"
+    sap_kit_dest: "{{ sap_kit }}/igsexe.sar"
+  - sap_kit_src: "{{ kit_igshelper_file }}"
+    sap_kit_dest: "{{ sap_kit }}/igshelper.sar"
+  - sap_kit_src: "{{ kit_saphostagent_file }}"
+    sap_kit_dest: "{{ sap_kit }}/saphostagent.sar"
+  - sap_kit_src: "{{ kit_hdbclient_file }}"
+    sap_kit_dest: "{{ sap_kit }}/hdbclient.sar"
+  - sap_kit_src: "{{ kit_nwabap_export_file }}"
+    sap_kit_dest: "{{ sap_kit }}"
+...

@@ -1,0 +1,11 @@
+---
+- hosts: app_iphost1
+  gather_facts: true
+  pre_tasks:
+    - name: Import playbook variables
+      include_vars: "{{ item }}"
+      loop:
+        - "hainfra-vars.yml"
+  roles:
+    - sapclustersetup
+...

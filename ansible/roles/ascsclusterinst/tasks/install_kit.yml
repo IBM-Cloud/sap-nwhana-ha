@@ -1,0 +1,42 @@
+---
+- name: Create directories for SAP NetWeaver Application Server kit on target
+  file:
+    path: "{{ sapinst_dir }}"
+    state: directory
+    mode: 0777
+  loop: "{{ sapinst_dirs }}"
+  loop_control:
+    loop_var: sapinst_dir
+
+- name: Copy SAP NetWeaver Application Server kit to /usr/sap//kit
+  copy:
+    src: "{{ kit_item.sap_kit_src }}"
+    dest: "{{ kit_item.sap_kit_dest }}"
+    owner: root
+    group: root
+    mode: 0777
+  loop: "{{ sap_kits }}"
+  loop_control:
+    loop_var: kit_item
+
+- name: Check if Export archive content was already extracted
+  stat:
+    path: "{{ sap_kit }}/DATA_UNITS/LABELIDX.ASC"
+  register: expfile_status
+
+- name: Extract the export ZIP file to target
+  unarchive:
+    src: "{{ sap_kit }}/{{ kit_nwabap_export_file.split('/')[-1] }}"
+    dest: "{{ sap_kit }}/"
+    remote_src: yes
+  when: not expfile_status.stat.exists
+
+- name: Check if SWPM archive content was already extracted
+  stat:
+    path: "{{ sap_kit }}/swpm/sapinst"
+  register: file_status
+
+- name: Extract SWPM archive
+  command: "{{ sap_kit }}/sapcar -xf {{ sap_kit }}/swpm.sar -R {{ sap_kit }}/swpm"
+  when: not file_status.stat.exists
+...

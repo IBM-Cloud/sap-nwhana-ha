@@ -1,0 +1,15 @@
+---
+- name: Check if the parameter file exists
+  stat:
+    path: "{{ sap_kit }}/users.params"
+  register: sapinst_param_file
+
+- name: Generate parameter file for sapinst
+  template:
+    src: sapusers.cfg
+    dest: "{{ sap_kit }}/users.params"
+
+- name: Start SAP users creation
+  shell: "{{ sap_kit }}/swpm/sapinst SAPINST_INPUT_PARAMETERS_URL={{ sap_kit }}/users.params SAPINST_EXECUTE_PRODUCT_ID={{ sapusers_product_id }} SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false"
+  when: not sapinst_param_file.stat.exists
+...

@@ -1,0 +1,21 @@
+---
+- name: Check SAP PAS installation status
+  stat:
+    path: "/usr/sap/{{ sap_sid | upper }}/D{{ sap_aas_instance_number }}/exe/sapstartsrv"
+  register: aas_stat_result
+
+- name: Generate parameter file for sapinst
+  template:
+    src: aasconfig.cfg
+    dest: "{{ sap_kit }}/aasconfig.params"
+  when: not aas_stat_result.stat.exists
+
+- name: Start SAP NW AAS installation
+  shell: "{{ sap_kit }}/swpm/sapinst SAPINST_INPUT_PARAMETERS_URL={{ sap_kit }}/aasconfig.params SAPINST_EXECUTE_PRODUCT_ID={{ sap_product_id }} SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false"
+  when: not aas_stat_result.stat.exists
+
+- name: Cleanup
+  file:
+    path: "{{ sap_kit }}"
+    state: absent
+...

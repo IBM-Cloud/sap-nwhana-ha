@@ -1,0 +1,26 @@
+---
+- name: Check if the dbinstance installation log file exists
+  stat:
+    path: "/tmp/sapinst_instdir/NW750/HDB/INSTALL/HA/ABAP/DB/sapinst_dev.log"
+  register: dbinstance_stat_result  
+
+- name: Generate parameter file for sapinst
+  template:
+      src: dbinstance.cfg
+      dest: "{{ sap_kit }}/dbinstance.params"
+  when: not dbinstance_stat_result.stat.exists
+
+- name: Start SAP DB instance installation
+  shell: "{{ sap_kit }}/swpm/sapinst SAPINST_INPUT_PARAMETERS_URL={{ sap_kit }}/dbinstance.params SAPINST_EXECUTE_PRODUCT_ID={{ sap_product_id }} SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false"
+  when: not dbinstance_stat_result.stat.exists
+
+- name: Remove virtual hostnames to /etc/hosts file
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {{ app_iphost1 }} {{ cname_ascs }} {{ cname_ascs }}.{{ domain_name }}
+      {{ app_iphost2 }} {{ cname_ers }} {{ cname_ers }}.{{ domain_name }}
+      {{ hdb_iphost1 }} {{ cname_hana }} {{ cname_hana }}.{{ domain_name }}
+    state: absent
+  when: not dbinstance_stat_result.stat.exists
+...

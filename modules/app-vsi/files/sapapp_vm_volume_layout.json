@@ -1,0 +1,25 @@
+{
+  "profiles": {
+    "default": {
+      "storage": {
+        "swap": {
+          "disk_size": "<swap_disk_size>",
+          "disk_count": "1",
+          "iops": "10iops-tier",
+          "lvm": {
+            "vg": {
+              "vg_name": "swap_vg"
+            },
+            "lv": [
+              {
+                "lv_name": "swap_lv",
+                "lv_size": "100%FREE",
+                "fs_type": "swap"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

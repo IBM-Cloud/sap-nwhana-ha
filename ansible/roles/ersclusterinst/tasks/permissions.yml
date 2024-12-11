@@ -1,0 +1,17 @@
+---
+- name: Configure permissions for SAP folders
+  file:
+    path: "{{ sapfolder }}"
+    owner: "{{ sap_sid | lower }}adm"
+    group: sapsys
+    mode: '0775'
+  loop:
+    - "/sapmnt/{{ sap_sid | upper }}"
+    - "/usr/sap/trans"
+    - "/usr/sap/{{ sap_sid | upper }}/SYS"
+    - "/usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}"
+    - "/usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}"
+    - "/usr/sap/{{ sap_sid | upper }}/D{{ sap_aas_instance_number }}"
+  loop_control:
+    loop_var: sapfolder
+...

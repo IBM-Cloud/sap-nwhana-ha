@@ -1,0 +1,65 @@
+---
+- name: Display the cluster configuration status
+  shell: |
+    pcs cluster config
+  register: hanacluster_cfg
+  changed_when: False
+  ignore_errors: true
+  when: hdb_hostname1 is defined
+
+- name: Configure cluster authentication
+  shell: |
+    set -o pipefail
+    pcs host auth {{ hdb_hostname1 }} {{ hdb_hostname2 }} -u hacluster -p "$(echo {{ ha_password }} | base64 -d)"
+  when: hdb_hostname1 not in hanacluster_cfg.stdout
+
+- name: Cluster setup
+  shell: |
+    pcs cluster setup ha-hdb {{ hdb_hostname1 }} {{ hdb_hostname2 }} totem token=30000
+  when: '"30000" not in hanacluster_cfg.stdout'
+
+- name: Register cluster status
+  shell: |
+    pcs status
+  register: cluster_status
+  changed_when: False
+  ignore_errors: true
+  when: hdb_hostname1 is defined
+
+- name: Cluster startup
+  shell: |
+    pcs cluster start --all
+  when: 'cluster_status.rc != 0 or "30000" not in hanacluster_cfg.stdout'
+
+- name: Display the resource defaults
+  shell: |
+    pcs resource defaults config
+  register: default_resource
+  changed_when: False
+  when: hdb_hostname1 is defined
+
+- name: Set resource-stickiness for resource defaults
+  shell: |
+    pcs resource defaults update resource-stickiness=1000
+  when: '"resource-stickiness=1000" not in default_resource.stdout'
+
+- name: Set migration-threshold for resource defaults
+  shell: |
+    pcs resource defaults update migration-threshold=5000
+  when: '"migration-threshold=5000" not in default_resource.stdout'
+
+- name: Check for if ha-sap-fa is created
+  shell: |
+    pcs status
+  register: pcsstatus
+  changed_when: False
+  when: hdb_hostname1 is defined
+
+- name: Configure fencing agent
+  shell: |
+    pcs stonith create ha-hdb-fa fence_ibm_vpc apikey={{ api_key }} \
+    limit=1 region={{ region }} pcmk_reboot_action=off \
+    pcmk_host_map='{{ hdb_hostname1 }}:{{ hdb_instanceid1 }};{{ hdb_hostname2 }}:{{ hdb_instanceid2 }}' \
+    verbose=1 op monitor interval=900s
+  when: '"ha-hdb-fa" not in pcsstatus.stdout'
+...

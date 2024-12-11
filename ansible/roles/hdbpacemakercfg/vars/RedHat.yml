@@ -1,0 +1,5 @@
+---
+os_release_min: 8
+systemd_vers_min: 239
+hana_sp_min: 7
+...

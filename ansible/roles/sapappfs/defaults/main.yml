@@ -1,0 +1,29 @@
+---
+nfs_directories:
+  - path: "/usr/sap"
+    permissions: '0775'
+  - path: "/sapmnt/{{ sap_sid | upper }}"
+    permissions: '0775'
+  - path: "/usr/sap/trans"
+    permissions: '0775'
+  - path: "/usr/sap/{{ sap_sid | upper }}/SYS"
+    permissions: '0775'
+  - path: /usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}
+    permissions: '0775'
+  - path: /usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}
+    permissions: '0775'
+
+nfs_mounts:
+  - fs_type: "nfs"
+    mount_source: "{{ sapmnt_mount_path }}"
+    mount_point: "/sapmnt/{{ sap_sid | upper }}"
+    mount_options: "rw,hard,rsize=65536,wsize=65536,vers=4.1,sec=sys"
+  - fs_type: "nfs"
+    mount_source: "{{ trans_mount_path }}"
+    mount_point: "/usr/sap/trans"
+    mount_options: "rw,hard,rsize=65536,wsize=65536,vers=4.1,sec=sys"
+  - fs_type: "nfs"
+    mount_source: "{{ sapsys_mount_path }}"
+    mount_point: "/usr/sap/{{ sap_sid | upper }}/SYS"
+    mount_options: "rw,hard,rsize=65536,wsize=65536,vers=4.1,sec=sys"
+...

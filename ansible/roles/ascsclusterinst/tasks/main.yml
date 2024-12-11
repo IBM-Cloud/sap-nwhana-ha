@@ -1,0 +1,92 @@
+---
+- name: Check SAP NW ASCS installation status
+  stat:
+    path: "/usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}/exe/sapstartsrv"
+  register: ascs_stat_result
+
+- name: Display the cluster status
+  shell: pcs status
+  register: appcluster_status
+  when: sap_sid is defined
+  changed_when: False
+
+- name: Set variable for cluster ASCS filesystem
+  set_fact:
+    ascs_cluster_fs: "fs_{{ sap_sid | upper }}_ASCS"
+
+- name: Put the secondary node on standby
+  shell: |
+    pcs node standby {{ app_hostname2 }}
+  when: ascs_cluster_fs not in appcluster_status.stdout
+
+- name: Create the filesystem cluster resource for ASCS
+  shell: |
+    pcs resource create fs_{{ sap_sid | upper }}_ASCS Filesystem device='{{ sapascs_mount_path }}' \
+    directory='/usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}' fstype='nfs' force_unmount=safe options='sec=sys,vers=4.1' \
+    op start interval=0 timeout=60 op stop interval=0 timeout=120 op monitor interval=200 timeout=105 \
+    --group group_{{ sap_sid | upper }}_ASCS
+  when: ascs_cluster_fs not in appcluster_status.stdout
+
+# ALB timeout workaround
+- name: Add virtual hostnames to /etc/hosts file
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {{ app_iphost1 }} {{ cname_ascs }} {{ cname_ascs }}.{{ domain_name }}
+      {{ app_iphost2 }} {{ cname_ers }} {{ cname_ers }}.{{ domain_name }}
+      {{ hdb_iphost1 }} {{ cname_hana }} {{ cname_hana }}.{{ domain_name }}
+  when: not ascs_stat_result.stat.exists
+
+- name: Check if the kit files are present in the required location
+  stat:
+    path: "{{ sap_kit }}/swpm"
+  register: swpm_status
+  when: not ascs_stat_result.stat.exists
+
+- name: Import install kit
+  include_tasks: "install_kit.yml"
+  when: not ascs_stat_result.stat.exists and not swpm_status.stat.exists
+
+- name: Import sapusers
+  include_tasks: "sapusers.yml"
+  when: not ascs_stat_result.stat.exists and not swpm_status.stat.exists
+
+- name: Import permissions
+  include_tasks: "permissions.yml"
+  when: not ascs_stat_result.stat.exists and not swpm_status.stat.exists
+
+- name: Generate parameter file for sapinst
+  template:
+    src: ascsconfig.cfg
+    dest: "{{ sap_kit }}/ascsconfig.params"
+  when: not ascs_stat_result.stat.exists
+
+- name: Start SAP NW ASCS installation
+  shell: "{{ sap_kit }}/swpm/sapinst SAPINST_USE_HOSTNAME={{ cname_ascs }} SAPINST_INPUT_PARAMETERS_URL={{ sap_kit }}/ascsconfig.params SAPINST_EXECUTE_PRODUCT_ID={{ sap_product_id }} SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false"
+  when: not ascs_stat_result.stat.exists
+
+- name: Set variable for cluster ASCS resource
+  set_fact:
+    ascs_cluster_res: "rsc_sap_{{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }}"
+
+- name: Create the cluster resource for ASCS
+  shell: |
+    pcs resource create rsc_sap_{{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }} SAPInstance \
+    InstanceName={{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }}_{{ cname_ascs }} START_PROFILE='/sapmnt/{{ sap_sid | upper }}/profile/{{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }}_{{ cname_ascs }}' \
+    AUTOMATIC_RECOVER=false \
+    meta resource-stickiness=5000 \
+    op monitor interval=20 on-fail=restart timeout=105 \
+    op start interval=0 timeout=600 op stop interval=0 timeout=600 \
+    --group group_{{ sap_sid | upper }}_ASCS
+  when: ascs_cluster_res not in appcluster_status.stdout
+
+- name: Put the secondary node out of standby
+  shell: |
+    pcs node unstandby {{ app_hostname2 }}
+  when: ascs_cluster_fs not in appcluster_status.stdout
+
+- name: Adjust sap services file
+  lineinfile:
+    path: /usr/sap/sapservices
+    line: "LD_LIBRARY_PATH=/usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}/exe:$LD_LIBRARY_PATH; export LD_LIBRARY_PATH; /usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}/exe/sapstartsrv pf=/usr/sap/{{ sap_sid | upper }}/SYS/profile/{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }}_{{ cname_ers }} -D -u {{ sap_sid | lower }}adm"
+...

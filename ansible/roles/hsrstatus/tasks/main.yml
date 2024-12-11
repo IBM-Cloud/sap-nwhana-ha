@@ -1,0 +1,39 @@
+---
+- name: Check for HANA Instance status
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: instancestatus_output
+  changed_when: false
+  when: hana_sysno is defined
+
+- name: Set variable hanastarted
+  set_fact:
+    hanastarted: yes
+  when: '"GRAY" not in instancestatus_output.stdout'
+
+- name: Check SAP HANA system replication status
+  shell: "{{ hana_db_env }} && {{ hana_replication_status_command }}"
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hsrstatus_initial
+  ignore_errors: true
+  failed_when: "hsrstatus_initial.rc not in [ 0, 10, 11, 12, 13, 14, 15 ]"
+  changed_when: False
+  when: hanastarted is defined
+
+- name: Wait for SAP HANA system replication to complete
+  shell: "{{ hana_db_env }} && {{ hana_replication_status_command }}"
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hsrstatus
+  until: hana_replication_status_ok in hsrstatus.stdout
+  retries: "{{ task_retries }}"
+  delay: "{{ task_delay }}"
+  ignore_errors: true
+  failed_when: "hsrstatus.rc not in [ 0, 10, 11, 12, 13, 14, 15 ]"
+  when: 'hanastarted is defined and "INITIALIZING" in hsrstatus_initial.stdout'
+...

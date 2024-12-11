@@ -1,0 +1,38 @@
+---
+- name: Create /usr/sap/kit directory
+  file:
+    path: "{{ hana_kit }}"
+    state: directory
+    mode: 0777
+
+- name: Check if HANA DB kit file is already on target
+  stat:
+    path: "{{ hana_kit }}/{{ kit_saphana_file.split('/')[-1] }}"
+  register: hdb_kit_status
+
+- name: Check if HANA DB kit files were extracted
+  stat:
+    path: "{{ hana_kit }}/DATA_UNITS/HDB_CLIENT_LINUX_X86_64/LABEL.ASC"
+  register: hdb_extract_status
+
+- name: Copy "{{ kit_saphana_file }}" kit to target
+  copy:
+    src: "{{ kit_saphana_file }}"
+    dest: "{{ hana_kit }}"
+    owner: root
+    group: root
+    mode: 0777
+  when: not hdb_kit_status.stat.exists and not hdb_extract_status.stat.exists
+
+- name: Extract "{{ hana_kit }}/{{ kit_saphana_file.split('/')[-1] }}" to target
+  unarchive:
+    src: "{{ hana_kit }}/{{ kit_saphana_file.split('/')[-1] }}"
+    dest: "{{ hana_kit }}"
+    remote_src: yes
+  when: not hdb_extract_status.stat.exists
+
+- name: Cleanup
+  file:
+    path: "{{ hana_kit }}/{{ kit_saphana_file.split('/')[-1] }}"
+    state: absent
+...

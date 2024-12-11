@@ -1,0 +1,8 @@
+---
+# SAP Note 3119751 for SAP Kernel 7.54 >= patch level 23 or SAP Kernel 7.89 >= patch level 65
+- name: Create symlink to compat library
+  file:
+    src: /opt/rh/SAP/lib64/compat-sap-c++-11.so
+    dest: /opt/rh/SAP/lib64/libstdc++.so.6
+    state: link
+...

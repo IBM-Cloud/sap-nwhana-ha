@@ -1,0 +1,51 @@
+---
+- name: Get the encoded content of /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT
+  ansible.builtin.slurp:
+    src: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/data/SSFS_{{ hana_sid | upper }}.DAT"
+  register: ssfs_data
+
+- name: Get the encoded content of /usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY
+  ansible.builtin.slurp:
+    src: "/usr/sap/{{ hana_sid | upper }}/SYS/global/security/rsecssfs/key/SSFS_{{ hana_sid | upper }}.KEY"
+  register: ssfs_key
+
+- name: Check SAP HANA replication status on primary node
+  shell: |
+    source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+    hdbnsutil -sr_state --sapcontrol=1
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: repl_status_primary
+  changed_when: False
+  ignore_errors: true
+  when: hana_sid is defined
+
+- name: Set SAP HANA replication status variable for primary node
+  set_fact:
+    replication_primary: "yes"
+  when: repl_status_primary.stdout.find('mode=primary') != -1
+
+- name: Configure HANA parameter replication
+  blockinfile:
+    path: /hana/shared/{{ hana_sid | upper }}/global/hdb/custom/config/global.ini
+    backup: yes
+    block: |
+
+      [inifile_checker]
+      replicate = true
+  when: replication_primary is not defined
+
+- name: Enable HSR on primary node
+  shell: |
+    source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+    /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/hdbnsutil \
+    -sr_enable --name=SITE_A
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hsrconfig
+  when: replication_primary is not defined
+...

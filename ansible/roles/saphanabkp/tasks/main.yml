@@ -1,0 +1,82 @@
+---
+- name: Check for the initial backup file for SYSTEMDB
+  stat:
+    path: "/hana/shared/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/backup/data/SYSTEMDB/full_system_backup_databackup_0_1"
+  register: systemdb_bk
+
+- name: Check for the initial backup file for tenant database
+  stat:
+    path: "/hana/shared/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/backup/data/DB_{{ hana_tenant | upper }}/full_{{ hana_tenant | upper }}_backup_databackup_0_1"
+  register: tenant_bk
+
+- name: Check for HANA Instance status
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: instancestatus_output
+  changed_when: false
+  when: not tenant_bk.stat.exists
+
+- name: Set variable hanastarted
+  set_fact:
+    hanastarted: yes
+  when: 'not tenant_bk.stat.exists and ("GRAY" not in instancestatus_output.stdout)'
+
+- name: Start HANADB
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function StartSystem HDB
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  when: not tenant_bk.stat.exists and hanastarted is not defined
+
+- name: Wait until HANA Instance is started
+  shell: |
+    /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getnewinstance_output
+  until: '"GRAY" not in getnewinstance_output.stdout and "YELLOW" not in getnewinstance_output.stdout'
+  retries: 200
+  delay: 10
+  when: (not tenant_bk.stat.exists or not systemdb_bk.stat.exists) and hanastarted is not defined
+  changed_when: False
+
+- name: Start SAP HANA DB backup for SYSTEMDB
+  shell: |
+      set -o pipefail
+      source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+      /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/hdbsql \
+      -i {{ hana_sysno }} -u SYSTEM -p "$(echo {{ hana_main_password }} | base64 -d)" -d SYSTEMDB -m <<EOF
+      BACKUP DATA USING FILE ('full_system_backup');
+      EOF
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: full_backup
+  changed_when: "'0 rows affected' in full_backup.stdout"
+  when: not systemdb_bk.stat.exists
+
+- name: Start SAP HANA DB backup for {{ hana_tenant | upper }}
+  shell: |
+      set -o pipefail
+      source /usr/sap/{{ hana_sid | upper }}/home/.sapenv.sh && \
+      /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/exe/hdbsql \
+      -i {{ hana_sysno }} -u SYSTEM -p "$(echo {{ hana_main_password }} | base64 -d)" -d SYSTEMDB -m <<EOF
+      BACKUP DATA FOR {{ hana_tenant | upper }} USING FILE ('full_{{ hana_tenant | upper }}_backup');
+      EOF
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: full_backup
+  changed_when: "'0 rows affected' in full_backup.stdout"
+  when: not tenant_bk.stat.exists
+...

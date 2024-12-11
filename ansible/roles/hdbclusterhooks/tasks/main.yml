@@ -1,0 +1,82 @@
+---
+- name: Check for the sudoers file
+  stat:
+    path: /etc/sudoers.d/20-saphana
+  register: hana_sudoers
+
+- name: Create HANA hooks directory
+  file:
+    path: "/hana/shared/{{ hana_hooks_dir }}"
+    state: directory
+    owner: "{{ hana_sid | lower }}adm"
+    group: sapsys
+    mode: 0755
+
+- name: Copy HANA hooks
+  copy:
+    src: /usr/share/SAPHanaSR/srHook/SAPHanaSR.py
+    dest: "/hana/shared/{{ hana_hooks_dir }}"
+    remote_src: yes
+    owner: "{{ hana_sid | lower }}adm"
+    group: sapsys
+    mode: 0755
+
+- name: Check for HANA Instance status
+  shell: |
+    /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getinstancestatus_output
+  changed_when: false
+  when: not hana_sudoers.stat.exists and hana_sysno is defined
+
+- name: Set variable hanastarted
+  set_fact:
+    hanastarted: yes
+  when: 'not hana_sudoers.stat.exists and "GRAY" not in getinstancestatus_output.stdout'
+
+- name: Stop HANADB instance
+  shell: |
+    /usr/sap/{{ hana_sid | upper }}/HDB{{ hana_sysno }}/HDB stop
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: hanadbstop
+  when: not hana_sudoers.stat.exists and hanastarted is defined
+
+- name: Wait until HANA Instance is stopped
+  shell: |
+      /usr/sap/hostctrl/exe/sapcontrol -nr {{ hana_sysno }} -function GetSystemInstanceList
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ hana_sid | lower }}adm"
+  register: getnewinstance_output
+  until: '"GREEN" not in getnewinstance_output.stdout and "YELLOW" not in getnewinstance_output.stdout'
+  retries: 200
+  delay: 10
+  when: not hana_sudoers.stat.exists and hanastarted is defined
+
+- name: Configure HANA hooks
+  blockinfile:
+    path: /hana/shared/{{ hana_sid | upper }}/global/hdb/custom/config/global.ini
+    backup: yes
+    block: |
+
+      [ha_dr_provider_SAPHanaSR]
+      provider = SAPHanaSR
+      path = /hana/shared/{{ hana_hooks_dir }}
+      execution_order = 1
+
+      [trace]
+      ha_dr_saphanasr = info
+  when: not hana_sudoers.stat.exists
+
+- name: Generate sudoers file HANA Hook replication
+  template:
+    src: 20-saphana.j2
+    dest: /etc/sudoers.d/20-saphana
+...

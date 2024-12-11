@@ -1,0 +1,15 @@
+---
+- hosts: app_iphost1,app_iphost2
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Import playbook variables
+      include_vars: "{{ item }}"
+      loop:
+        - "nwabapapp-vars.yml"
+        - "fileshares-vars.yml"
+        - "hainfra-vars.yml"
+        - "dns-vars.yml"
+  roles:
+    - sapappfs
+...

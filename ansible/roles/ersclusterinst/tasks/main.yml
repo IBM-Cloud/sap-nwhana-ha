@@ -1,0 +1,154 @@
+---
+- name: Check SAP NW ERS installation status
+  stat:
+    path: "/usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}/exe/sapstartsrv"
+  register: ers_stat_result
+
+- name: Display the cluster status
+  shell: pcs status
+  register: appcluster_status
+  when: sap_sid is defined
+  changed_when: False
+
+- name: Set variable for cluster ERS filesystem
+  set_fact:
+    ers_cluster_fs: "fs_{{ sap_sid | upper }}_ERS"
+
+- name: Create the filesystem cluster resource for ERS
+  shell: |
+    pcs resource create fs_{{ sap_sid | upper }}_ERS Filesystem device='{{ sapers_mount_path }}' \
+    directory='/usr/sap/{{ sap_sid | upper }}/ERS{{ sap_ers_instance_number }}' fstype='nfs' force_unmount=safe options='sec=sys,vers=4.1' \
+    op start interval=0 timeout=60 op stop interval=0 timeout=120 op monitor interval=200 timeout=105 \
+    --group group_{{ sap_sid | upper }}_ERS
+  when: ers_cluster_fs not in appcluster_status.stdout
+
+- name: Display SAP cluster stop order constraint
+  shell: |
+    pcs constraint config | grep stop | grep group_{{ sap_sid | upper }}_ERS
+  register: constraint_stop
+  changed_when: False
+  ignore_errors: true
+  when: sap_sid is defined
+
+- name: Add virtual hostnames to /etc/hosts file
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {{ app_iphost1 }} {{ cname_ascs }} {{ cname_ascs }}.{{ domain_name }}
+      {{ app_iphost2 }} {{ cname_ers }} {{ cname_ers }}.{{ domain_name }}
+  when: '"stop" not in constraint_stop.stdout'
+
+- name: Check if the kit files are present in the required location
+  stat:
+    path: "{{ sap_kit }}/swpm"
+  register: swpm_status
+  when: not ers_stat_result.stat.exists
+
+- name: Import install kit
+  include_tasks: "install_kit.yml"
+  when: not ers_stat_result.stat.exists and not swpm_status.stat.exists
+
+- name: Import sapusers
+  include_tasks: "sapusers.yml"
+  when: not ers_stat_result.stat.exists and not ers_stat_result.stat.exists
+
+- name: Import permissions
+  include_tasks: "permissions.yml"
+  when: not ers_stat_result.stat.exists and not ers_stat_result.stat.exists
+
+- name: Generate parameter file for sapinst
+  template:
+    src: ersconfig.cfg
+    dest: "{{ sap_kit }}/ersconfig.params"
+  when: not ers_stat_result.stat.exists and not ers_stat_result.stat.exists
+
+- name: Start SAP NW ERS installation
+  shell: "{{ sap_kit }}/swpm/sapinst SAPINST_USE_HOSTNAME={{ cname_ers }} SAPINST_INPUT_PARAMETERS_URL={{ sap_kit }}/ersconfig.params SAPINST_EXECUTE_PRODUCT_ID={{ sap_product_id }} SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false"
+  when: not ers_stat_result.stat.exists
+
+- name: Set variable for cluster ERS resource
+  set_fact:
+    ers_cluster_resource: "rsc_sap_{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }}"
+
+- name: Create the cluster resource for ERS
+  shell: |
+    pcs resource create rsc_sap_{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }} SAPInstance \
+    InstanceName={{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }}_{{ cname_ers }} START_PROFILE='/sapmnt/{{ sap_sid | upper }}/profile/{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }}_{{ cname_ers }}' \
+    AUTOMATIC_RECOVER=false IS_ERS=true \
+    op monitor interval=20 on-fail=restart timeout=105 op start interval=0 timeout=600 op stop interval=0 timeout=600 \
+    --group group_{{ sap_sid | upper }}_ERS
+  when: ers_cluster_resource not in appcluster_status.stdout
+
+- name: Display resource meta options for ASCS
+  shell: |
+    pcs resource config group_{{ sap_sid | upper }}_ASCS
+  register: ascs_meta
+  when: sap_sid is defined
+  changed_when: False
+
+- name: Configure resource stickiness for ASCS
+  shell: |
+    pcs resource meta group_{{ sap_sid | upper }}_ASCS resource-stickiness=3000
+  when: '"resource-stickiness=3000" not in ascs_meta.stdout'
+
+- name: Display resource meta options for ERS
+  shell: |
+    pcs resource config rsc_sap_{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }}
+  register: ers_meta
+  when: sap_ers_instance_number is defined
+  changed_when: False
+
+- name: Configure resource stickiness for ERS
+  shell: |
+    pcs resource meta rsc_sap_{{ sap_sid | upper }}_ERS{{ sap_ers_instance_number }} resource-stickiness=3000
+  when: '"resource-stickiness=3000" not in ers_meta.stdout'
+
+- name: Display SAP cluster colocation constraint
+  shell: |
+    pcs constraint config | grep score
+  register: constraint_coloc
+  changed_when: False
+  ignore_errors: true
+  when: sap_sid is defined
+
+- name: Configure SAP cluster colocation constraint
+  shell: |
+    pcs constraint colocation add group_{{ sap_sid | upper }}_ERS with group_{{ sap_sid | upper }}_ASCS -5000
+  when: '"score:-5000" not in constraint_coloc.stdout'
+
+- name: Display SAP cluster start order constraint
+  shell: |
+    pcs constraint config | grep start | grep -v stop
+  register: constraint_start
+  changed_when: False
+  ignore_errors: true
+  when: sap_sid is defined
+
+- name: Configure SAP cluster start order constraint
+  shell: |
+    pcs constraint order start group_{{ sap_sid | upper }}_ASCS then start group_{{ sap_sid | upper }}_ERS kind=Optional symmetrical=false
+  when: '"start" not in constraint_start.stdout'
+
+- name: Configure SAP cluster stop order constraint
+  shell: |
+    pcs constraint order start group_{{ sap_sid | upper }}_ASCS then stop group_{{ sap_sid | upper }}_ERS kind=Optional symmetrical=false
+  when: '"stop" not in constraint_stop.stdout'
+
+- name: Restart ASCS cluster resource
+  shell: |
+    pcs resource restart rsc_sap_{{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }}
+  when: '"resource-stickiness=3000" not in ascs_meta.stdout'
+
+- name: Adjust sap services file
+  lineinfile:
+    path: /usr/sap/sapservices
+    line: "LD_LIBRARY_PATH=/usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}/exe:$LD_LIBRARY_PATH; export LD_LIBRARY_PATH; /usr/sap/{{ sap_sid | upper }}/ASCS{{ sap_ascs_instance_number }}/exe/sapstartsrv pf=/usr/sap/{{ sap_sid | upper }}/SYS/profile/{{ sap_sid | upper }}_ASCS{{ sap_ascs_instance_number }}_{{ cname_ascs }} -D -u {{ sap_sid | lower }}adm"
+
+- name: Remove virtual hostnames from /etc/hosts file
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {{ app_iphost1 }} {{ cname_ascs }} {{ cname_ascs }}.{{ domain_name }}
+      {{ app_iphost2 }} {{ cname_ers }} {{ cname_ers }}.{{ domain_name }}
+    state: absent
+...

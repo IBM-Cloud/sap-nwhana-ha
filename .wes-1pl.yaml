@@ -1,0 +1,16 @@
+toolchain:
+  region: us-south
+ci:
+  terraform:
+    run: false
+    variables:
+      - name: ibmcloud_region
+        type: text
+        value: us-south
+pr:
+  terraform:
+    run: false
+    variables:
+      - name: ibmcloud_region
+        type: text
+        value: us-south

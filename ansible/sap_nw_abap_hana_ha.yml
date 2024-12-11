@@ -1,0 +1,59 @@
+- name: sapbasereq.yml
+  ansible.builtin.import_playbook: sapbasereq.yml
+
+- name: sapappfs.yml
+  ansible.builtin.import_playbook: sapappfs.yml
+
+- name: pasfs.yml
+  ansible.builtin.import_playbook: pasfs.yml
+
+- name: aasfs.yml
+  ansible.builtin.import_playbook: aasfs.yml
+
+- name: sapappreq.yml
+  ansible.builtin.import_playbook: sapappreq.yml
+
+- name: hdbreq.yml
+  ansible.builtin.import_playbook: hdbreq.yml
+
+- name: sapclustersetup.yml
+  ansible.builtin.import_playbook: sapclustersetup.yml
+
+- name: hdbclustersetup.yml
+  ansible.builtin.import_playbook: hdbclustersetup.yml
+
+- name: hdbinst.yml
+  ansible.builtin.import_playbook: hdbinst.yml
+
+- name: ascsclusterinst.yml
+  ansible.builtin.import_playbook: ascsclusterinst.yml
+
+- name: ersclusterinst.yml
+  ansible.builtin.import_playbook: ersclusterinst.yml
+
+- name: dbinstance.yml
+  ansible.builtin.import_playbook: dbinstance.yml
+
+- name: hdbprimaryhsr.yml
+  ansible.builtin.import_playbook: hdbprimaryhsr.yml
+
+- name: hdbreplicahsr.yml
+  ansible.builtin.import_playbook: hdbreplicahsr.yml
+
+- name: hsrstatus.yml
+  ansible.builtin.import_playbook: hsrstatus.yml
+
+- name: hdbhooks.yml
+  ansible.builtin.import_playbook: hdbhooks.yml
+
+- name: hdbclusterprimary.yml
+  ansible.builtin.import_playbook: hdbclusterprimary.yml
+
+- name: hdbpacemaker.yml
+  ansible.builtin.import_playbook: hdbpacemaker.yml
+
+- name: pasinst.yml
+  ansible.builtin.import_playbook: pasinst.yml
+
+- name: aasinst.yml
+  ansible.builtin.import_playbook: aasinst.yml

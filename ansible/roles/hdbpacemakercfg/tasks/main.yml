@@ -1,0 +1,42 @@
+---
+# https://access.redhat.com/solutions/7029705
+
+- name: Include OS specific variables
+  include_vars: "{{ ansible_distribution }}.yml"
+
+- name: Check the prerequisites
+  include_tasks: "systemd_use_prerequisites.yml"
+
+- name: Check if pacemaker.service.d directory exists
+  stat:
+    path: "/etc/systemd/system/pacemaker.service.d"
+  register: pacemaker_service_d_status
+  when: use_systemd is defined
+
+- name: Create a directory for pacemaker in systemd
+  file:
+    path: "/etc/systemd/system/pacemaker.service.d"
+    state: directory
+    mode: 0755
+  when: use_systemd is defined and not pacemaker_service_d_status.stat.exists
+
+# The name of the service used in Jinja file can be found by running the command: systemd-cgls -u SAP.slice
+
+- name: Check if pacemaker.conf file exists
+  stat:
+    path: "/etc/systemd/system/pacemaker.service.d/{{ hana_sysno }}-pacemaker.conf"
+  register: pacemaker_conf_status
+  when: use_systemd is defined
+
+- name: Generate the pacemaker file
+  template:
+    src: pacemaker.j2
+    dest: "/etc/systemd/system/pacemaker.service.d/{{ hana_sysno }}-pacemaker.conf"
+    mode: 0644
+  when: use_systemd is defined and not pacemaker_conf_status.stat.exists
+
+- name: Activate the file
+  systemd:
+    daemon_reload: yes
+  when: use_systemd is defined
+...
